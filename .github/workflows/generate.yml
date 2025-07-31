@@ -17,6 +17,9 @@ jobs:
         with:
           node-version: 18
 
+      - name: Clean previous node_modules (force fresh run)
+        run: rm -rf node_modules
+
       - name: Install dependencies
         run: npm install node-fetch@2 xml2js
 
