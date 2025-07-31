@@ -1,4 +1,4 @@
-// generate.mjs – Shopify → taalgesplitste sitemaps
+// generate.mjs – versie met geforceerde overschrijving, maar zonder Git-force hack
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
@@ -29,31 +29,27 @@ const run = async () => {
     try {
       const url = new URL(sitemapUrl);
       const path = url.pathname;
-      const cleanPath = path.replace(/\?.*$/, '');
 
-      // Match bv. /fr/sitemap_products_1.xml
+      // Match bv. /fr/sitemap_products_1.xml → lang=fr, type=products, chunk=1
+      const cleanPath = path.replace(/\?.*$/, '');
       const match = cleanPath.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
       if (!match) continue;
 
       const [, langMatch, type, chunk] = match;
       const lang = langMatch || 'en';
+
+      // ⛔ Filter: verwerk alleen gewenste talen
+      if (!LANGS.includes(lang) && lang !== 'en') continue;
+
       const fileName = `${lang}-${type}-${chunk}.xml`;
 
       const res = await fetch(sitemapUrl);
       const xml = await res.text();
-
-      if (!xml.includes('<urlset')) {
-        console.warn(`⛔ Ongeldige sitemap bij ${sitemapUrl}`);
-        continue;
-      }
-
       const parsed = await parseStringPromise(xml);
       const urls = parsed.urlset?.url?.map(u => u.loc[0]) || [];
 
-      if (!urls.length) {
-        console.warn(`⚠️ Geen URLs in ${sitemapUrl}`);
-        continue;
-      }
+      // Als er echt niets in zit, skippen
+      if (!urls.length) continue;
 
       perFileContent[fileName] = buildXml(urls);
       perLangIndex[lang] = perLangIndex[lang] || [];
@@ -68,31 +64,20 @@ const run = async () => {
 
   await fs.mkdir('dist', { recursive: true });
 
-  // Vorige .xml-bestanden opruimen
-  const existingFiles = await fs.readdir('dist');
-  for (const file of existingFiles) {
-    if (file.endsWith('.xml')) {
-      await fs.unlink(`dist/${file}`);
-    }
-  }
-
-  // Sitemap chunks wegschrijven
+  // 📝 Schrijf alle chunks weg
   for (const file in perFileContent) {
     await fs.writeFile(`dist/${file}`, perFileContent[file]);
   }
 
-  // Index per taal (2 versies)
+  // 🔄 Schrijf de indexen voor nl.xml, fr.xml enz.
   for (const lang in perLangIndex) {
-    perLangIndex[lang] = perLangIndex[lang].filter(f => f.endsWith('.xml'));
+    const entries = perLangIndex[lang].filter(f => f.endsWith('.xml'));
+    const xml = buildIndex(entries);
 
-    const xml = buildIndex(perLangIndex[lang]);
+    await fs.writeFile(`dist/${lang}.xml`, xml);         // bv. nl.xml
+    await fs.writeFile(`dist/${lang}-index.xml`, xml);   // bv. nl-index.xml
 
-    // Publieke versie
-    await fs.writeFile(`dist/${lang}.xml`, xml);
-    // Backupversie
-    await fs.writeFile(`dist/${lang}-index.xml`, xml);
-
-    console.log(`📦 ${lang}.xml en ${lang}-index.xml (${perLangIndex[lang].length} bestanden)`);
+    console.log(`📦 ${lang}.xml en ${lang}-index.xml (${entries.length} bestanden)`);
   }
 };
 
