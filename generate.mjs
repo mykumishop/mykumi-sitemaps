@@ -30,7 +30,7 @@ const run = async () => {
       const url = new URL(sitemapUrl);
       const path = url.pathname;
 
-      // Match /fr/sitemap_products_1.xml → lang=fr, type=products, chunk=1
+      // Match bv. /fr/sitemap_products_1.xml → lang=fr, type=products, chunk=1
       const cleanPath = path.replace(/\?.*$/, '');
       const match = cleanPath.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
       if (!match) continue;
@@ -38,7 +38,7 @@ const run = async () => {
       const [, langMatch, type, chunk] = match;
       const lang = langMatch || 'en';
       const fileName = `${lang}-${type}-${chunk}.xml`;
-      
+
       const res = await fetch(sitemapUrl);
       const xml = await res.text();
       const parsed = await parseStringPromise(xml);
@@ -59,19 +59,25 @@ const run = async () => {
 
   await fs.mkdir('dist', { recursive: true });
 
-  // .xml-bestanden wegschrijven
+  // .xml-bestanden per chunk wegschrijven
   for (const file in perFileContent) {
     await fs.writeFile(`dist/${file}`, perFileContent[file]);
   }
 
-  // index.xml per taal
+  // index.xml per taal (2 versies weggeschreven)
   for (const lang in perLangIndex) {
-   // ✅ Filter veiligheidshalve foute entries weg
-   perLangIndex[lang] = perLangIndex[lang].filter(f => f.endsWith('.xml'));
-    
+    // Filter zekerheidshalve alleen geldige .xml-bestanden
+    perLangIndex[lang] = perLangIndex[lang].filter(f => f.endsWith('.xml'));
+
     const xml = buildIndex(perLangIndex[lang]);
+
+    // ✅ 1. Publieke versie zoals nl.xml, fr.xml, ...
     await fs.writeFile(`dist/${lang}.xml`, xml);
-    console.log(`📦 ${lang}-index.xml (${perLangIndex[lang].length} bestanden)`);
+
+    // ✅ 2. Optionele backup als nl-index.xml, fr-index.xml, ...
+    await fs.writeFile(`dist/${lang}-index.xml`, xml);
+
+    console.log(`📦 ${lang}.xml en ${lang}-index.xml (${perLangIndex[lang].length} bestanden)`);
   }
 };
 
