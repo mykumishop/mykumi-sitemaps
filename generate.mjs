@@ -38,7 +38,7 @@ const run = async () => {
       const [, langMatch, type, chunk] = match;
       const lang = langMatch || 'en';
       const fileName = `${lang}-${type}-${chunk}.xml`;
-
+      
       const res = await fetch(sitemapUrl);
       const xml = await res.text();
       const parsed = await parseStringPromise(xml);
