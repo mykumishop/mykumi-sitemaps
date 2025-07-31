@@ -31,7 +31,8 @@ const run = async () => {
       const path = url.pathname;
 
       // Match /fr/sitemap_products_1.xml → lang=fr, type=products, chunk=1
-      const match = path.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)\.xml/);
+      const cleanPath = path.replace(/\?.*$/, '');
+      const match = cleanPath.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
       if (!match) continue;
 
       const [, langMatch, type, chunk] = match;
