@@ -81,10 +81,6 @@ const run = async () => {
   }
 };
 
-// ✅ Tijdelijke trigger om Git altijd iets te laten committen
-await fs.writeFile(`dist/.force-${Date.now()}.txt`, 'force update');
-}
-
 run().catch(err => {
   console.error('❌ Script mislukt:', err);
   process.exit(1);
