@@ -1,68 +1,75 @@
-// generate.mjs
+// generate.mjs – gesplitst per taal én type
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
 
 const INDEX_URL = 'https://mykumi.com/sitemap.xml';
 const LANGS = ['fr', 'de', 'nl']; // Engels = root
-const outputPerLang = {
-  en: [],
-  fr: [],
-  de: [],
-  nl: [],
+
+const perLangFiles = {}; // bv. fr -> [ 'fr-products-1.xml', ... ]
+const perFileContent = {}; // bestandsnaam -> xml-string
+
+const fetchAndParse = async (url) => {
+  const res = await fetch(url);
+  const text = await res.text();
+  return parseStringPromise(text);
 };
 
-const buildXml = (urls) => `
-<?xml version="1.0" encoding="UTF-8"?>
+const buildXml = (urls) => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map(url => `
-  <url>
-    <loc>${url}</loc>
-  </url>`).join('')}
-</urlset>
-`;
+${urls.map(u => `<url><loc>${u}</loc></url>`).join('\n')}
+</urlset>`;
+
+const buildIndex = (urls) => `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map(u => `<sitemap><loc>https://sitemap.mykumi.com/${u}</loc></sitemap>`).join('\n')}
+</sitemapindex>`;
 
 const run = async () => {
-  console.log('📥 Ophalen van sitemap-index...');
-  const indexRes = await fetch(INDEX_URL);
-  const indexXml = await indexRes.text();
-  const parsedIndex = await parseStringPromise(indexXml);
+  const index = await fetchAndParse(INDEX_URL);
+  const entries = index.sitemapindex.sitemap.map(s => s.loc[0]);
 
-  const sitemapUrls = parsedIndex.sitemapindex.sitemap.map(s => s.loc[0]);
+  for (const entry of entries) {
+    const url = new URL(entry);
+    const match = url.pathname.match(/^\/([a-z]{2})\/sitemap_(products|collections|pages|blogs)_([0-9]+)\.xml/);
+    if (!match) continue;
 
-  console.log(`🔗 ${sitemapUrls.length} sub-sitemaps gevonden`);
+    const [, lang, type, chunk] = match;
 
-  for (const sitemapUrl of sitemapUrls) {
-    console.log(`↪️ Laden: ${sitemapUrl}`);
+    const fileName = `${lang}-${type}-${chunk}.xml`;
+    if (!LANGS.includes(lang)) continue;
+
     try {
-      const sitemapRes = await fetch(sitemapUrl);
-      const sitemapXml = await sitemapRes.text();
-      const parsed = await parseStringPromise(sitemapXml);
+      const parsed = await fetchAndParse(entry);
+      const urls = parsed.urlset?.url?.map(u => u.loc[0]) || [];
+      if (!urls.length) continue;
 
-      if (!parsed.urlset || !parsed.urlset.url) continue;
+      // opslaan in per-bestand
+      perFileContent[fileName] = buildXml(urls);
 
-      const urls = parsed.urlset.url.map(u => u.loc[0]);
+      // opslaan in per-taal index
+      perLangFiles[lang] = perLangFiles[lang] || [];
+      perLangFiles[lang].push(fileName);
 
-      for (const url of urls) {
-        const path = new URL(url).pathname;
-        const matchedLang = LANGS.find(lang => path.startsWith(`/${lang}/`));
-        if (matchedLang) {
-          outputPerLang[matchedLang].push(url);
-        } else {
-          outputPerLang.en.push(url);
-        }
-      }
+      console.log(`✅ ${fileName} (${urls.length} URLs)`);
+
     } catch (err) {
-      console.warn(`⚠️ Fout bij ${sitemapUrl}: ${err.message}`);
+      console.warn(`⚠️ Fout bij ${fileName}: ${err.message}`);
     }
   }
 
   await fs.mkdir('dist', { recursive: true });
 
-  for (const lang of Object.keys(outputPerLang)) {
-    const xml = buildXml(outputPerLang[lang]);
-    await fs.writeFile(`dist/${lang}.xml`, xml.trim());
-    console.log(`✅ ${lang}.xml geschreven (${outputPerLang[lang].length} URLs)`);
+  // Schrijf individuele taal-bestanden
+  for (const file in perFileContent) {
+    await fs.writeFile(`dist/${file}`, perFileContent[file]);
+  }
+
+  // Schrijf indexen per taal
+  for (const lang in perLangFiles) {
+    const indexXml = buildIndex(perLangFiles[lang]);
+    await fs.writeFile(`dist/${lang}-index.xml`, indexXml);
+    console.log(`📦 ${lang}-index.xml aangemaakt (${perLangFiles[lang].length} chunks)`);
   }
 };
 
