@@ -1,4 +1,3 @@
-// generate.mjs – versie met geforceerde overschrijving, maar zonder Git-force hack
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
@@ -6,8 +5,8 @@ import { parseStringPromise } from 'xml2js';
 const INDEX_URL = 'https://mykumi.com/sitemap.xml';
 const LANGS = ['fr', 'de', 'nl']; // 'en' is zonder prefix
 
-const perFileContent = {}; // bv. fr-products-1.xml => XML-string
-const perLangIndex = {};   // bv. fr => [ 'fr-products-1.xml', ... ]
+const perFileContent = {};
+const perLangIndex = {};
 
 const buildXml = (urls) => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -25,22 +24,21 @@ const run = async () => {
   const parsedIndex = await parseStringPromise(indexXml);
   const sitemapUrls = parsedIndex.sitemapindex.sitemap.map(s => s.loc[0]);
 
+  console.log(`📦 Shopify-sitemap bevat ${sitemapUrls.length} chunks`);
+
   for (const sitemapUrl of sitemapUrls) {
     try {
       const url = new URL(sitemapUrl);
-      const path = url.pathname;
+      const cleanPath = url.pathname; // zonder querystring
 
-      // Match bv. /fr/sitemap_products_1.xml → lang=fr, type=products, chunk=1
-      const cleanPath = path.replace(/\?.*$/, '');
-      const match = cleanPath.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
-      if (!match) continue;
+      const match = cleanPath.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)\.xml$/i);
+      if (!match) {
+        console.log(`⏭️  Overgeslagen (geen match): ${cleanPath}`);
+        continue;
+      }
 
       const [, langMatch, type, chunk] = match;
       const lang = langMatch || 'en';
-
-      // ⛔ Filter: verwerk alleen gewenste talen
-      if (!LANGS.includes(lang) && lang !== 'en') continue;
-
       const fileName = `${lang}-${type}-${chunk}.xml`;
 
       const res = await fetch(sitemapUrl);
@@ -48,8 +46,10 @@ const run = async () => {
       const parsed = await parseStringPromise(xml);
       const urls = parsed.urlset?.url?.map(u => u.loc[0]) || [];
 
-      // Als er echt niets in zit, skippen
-      if (!urls.length) continue;
+      if (!urls.length) {
+        console.log(`⚠️ Lege sitemap: ${fileName}`);
+        continue;
+      }
 
       perFileContent[fileName] = buildXml(urls);
       perLangIndex[lang] = perLangIndex[lang] || [];
@@ -58,26 +58,32 @@ const run = async () => {
       console.log(`✅ ${fileName} (${urls.length} URLs)`);
 
     } catch (err) {
-      console.warn(`⚠️ Fout bij ${sitemapUrl}: ${err.message}`);
+      console.warn(`❌ Fout bij ${sitemapUrl}: ${err.message}`);
     }
   }
 
   await fs.mkdir('dist', { recursive: true });
 
-  // 📝 Schrijf alle chunks weg
+  // Verwijder oude .xml bestanden
+  const files = await fs.readdir('dist');
+  for (const file of files) {
+    if (file.endsWith('.xml')) {
+      await fs.unlink(`dist/${file}`);
+    }
+  }
+
+  // Wegschrijven chunks
   for (const file in perFileContent) {
     await fs.writeFile(`dist/${file}`, perFileContent[file]);
   }
 
-  // 🔄 Schrijf de indexen voor nl.xml, fr.xml enz.
+  // Wegschrijven indexen
   for (const lang in perLangIndex) {
-    const entries = perLangIndex[lang].filter(f => f.endsWith('.xml'));
-    const xml = buildIndex(entries);
-
-    await fs.writeFile(`dist/${lang}.xml`, xml);         // bv. nl.xml
-    await fs.writeFile(`dist/${lang}-index.xml`, xml);   // bv. nl-index.xml
-
-    console.log(`📦 ${lang}.xml en ${lang}-index.xml (${entries.length} bestanden)`);
+    const files = perLangIndex[lang].filter(f => f.endsWith('.xml'));
+    const index = buildIndex(files);
+    await fs.writeFile(`dist/${lang}.xml`, index);
+    await fs.writeFile(`dist/${lang}-index.xml`, index);
+    console.log(`📑 ${lang}.xml bevat ${files.length} chunks`);
   }
 };
 
