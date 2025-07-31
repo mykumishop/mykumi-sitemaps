@@ -1,11 +1,13 @@
+// generate.mjs v3 – split op basis van Shopify sitemapstructuur
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
 
 const INDEX_URL = 'https://mykumi.com/sitemap.xml';
-const LANGS = ['fr', 'de', 'nl']; // Engels = root
-const output = {};  // bv. output['fr-products-1'] = [ ... ]
-const perLangIndex = {}; // bv. perLangIndex['fr'] = [ 'fr-products-1.xml', ... ]
+const LANGS = ['fr', 'de', 'nl']; // 'en' is zonder prefix
+
+const perFileContent = {}; // bv. fr-products-1.xml => XML-string
+const perLangIndex = {};   // bv. fr => [ 'fr-products-1.xml', ... ]
 
 const buildXml = (urls) => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -21,40 +23,34 @@ const run = async () => {
   const indexRes = await fetch(INDEX_URL);
   const indexXml = await indexRes.text();
   const parsedIndex = await parseStringPromise(indexXml);
-
   const sitemapUrls = parsedIndex.sitemapindex.sitemap.map(s => s.loc[0]);
 
   for (const sitemapUrl of sitemapUrls) {
     try {
+      const url = new URL(sitemapUrl);
+      const path = url.pathname;
+
+      // Match /fr/sitemap_products_1.xml → lang=fr, type=products, chunk=1
+      const match = path.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)\.xml/);
+      if (!match) continue;
+
+      const [, langMatch, type, chunk] = match;
+      const lang = langMatch || 'en';
+      const fileName = `${lang}-${type}-${chunk}.xml`;
+
       const res = await fetch(sitemapUrl);
       const xml = await res.text();
       const parsed = await parseStringPromise(xml);
       const urls = parsed.urlset?.url?.map(u => u.loc[0]) || [];
 
-      for (const lang of [...LANGS, 'en']) {
-        const filtered = urls.filter(url => {
-          const path = new URL(url).pathname;
-          return lang === 'en'
-            ? !LANGS.some(l => path.startsWith(`/${l}/`)) // Engels = alles zonder taalslug
-            : path.startsWith(`/${lang}/`);
-        });
+      if (!urls.length) continue;
 
-        if (filtered.length === 0) continue;
+      perFileContent[fileName] = buildXml(urls);
+      perLangIndex[lang] = perLangIndex[lang] || [];
+      perLangIndex[lang].push(fileName);
 
-        // Bestandsnaam bepalen op basis van originele sitemapUrl
-        const typeMatch = sitemapUrl.match(/sitemap_(products|pages|collections|blogs)/);
-        const type = typeMatch?.[1] || 'unknown';
-        const chunkMatch = sitemapUrl.match(/_(\d+)\.xml/);
-        const chunk = chunkMatch?.[1] || '0';
+      console.log(`✅ ${fileName} (${urls.length} URLs)`);
 
-        const filename = `${lang}-${type}-${chunk}.xml`;
-
-        output[filename] = buildXml(filtered);
-        perLangIndex[lang] = perLangIndex[lang] || [];
-        perLangIndex[lang].push(filename);
-
-        console.log(`✅ ${filename} (${filtered.length} URLs)`);
-      }
     } catch (err) {
       console.warn(`⚠️ Fout bij ${sitemapUrl}: ${err.message}`);
     }
@@ -62,20 +58,20 @@ const run = async () => {
 
   await fs.mkdir('dist', { recursive: true });
 
-  // Schrijf individuele .xml-bestanden
-  for (const file in output) {
-    await fs.writeFile(`dist/${file}`, output[file]);
+  // .xml-bestanden wegschrijven
+  for (const file in perFileContent) {
+    await fs.writeFile(`dist/${file}`, perFileContent[file]);
   }
 
-  // Schrijf per-taal index.xml
+  // index.xml per taal
   for (const lang in perLangIndex) {
-    const index = buildIndex(perLangIndex[lang]);
-    await fs.writeFile(`dist/${lang}-index.xml`, index);
-    console.log(`📦 ${lang}-index.xml (${perLangIndex[lang].length} chunks)`);
+    const xml = buildIndex(perLangIndex[lang]);
+    await fs.writeFile(`dist/${lang}-index.xml`, xml);
+    console.log(`📦 ${lang}-index.xml (${perLangIndex[lang].length} bestanden)`);
   }
 };
 
-run().catch(e => {
-  console.error('❌ Er ging iets mis:', e);
+run().catch(err => {
+  console.error('❌ Script mislukt:', err);
   process.exit(1);
 });
