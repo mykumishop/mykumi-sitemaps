@@ -3,7 +3,7 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/+/, ''); // bijv. fr.xml
 
-    // 🧾 Robots.txt response
+    // Robots.txt response
     if (url.pathname === '/robots.txt') {
       return new Response(
         `User-agent: *\n` +
@@ -16,14 +16,16 @@ export default {
     }
 
     try {
-      const sitemap = await import(`./dist/${path}`, {
-        with: { type: "text" }
-      });
-      return new Response(sitemap.default, {
-        headers: { "Content-Type": "application/xml" },
-      });
+      const response = await fetch(`https://raw.githubusercontent.com/mykumishop/mykumi-sitemaps/main/dist/${path}`);
+      if (response.status === 200) {
+        return new Response(await response.text(), {
+          headers: { "Content-Type": "application/xml" }
+        });
+      } else {
+        return new Response("Not found", { status: 404 });
+      }
     } catch (e) {
-      return new Response("Not found", { status: 404 });
+      return new Response("Error loading file", { status: 500 });
     }
   },
 };
