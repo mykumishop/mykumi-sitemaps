@@ -1,20 +1,30 @@
-name: Generate Sitemaps
+name: Generate language-specific sitemaps
 
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'  # Elke dag om 03:00 UTC
+  workflow_dispatch:     # Manueel triggeren via GitHub
 
 jobs:
-  build:
+  generate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Run sitemap generator
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install node-fetch@2 xml2js
+
+      - name: Run generate script
         run: node generate.mjs
 
-      - name: Upload sitemap output
-        uses: actions/upload-artifact@v4
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          name: sitemaps
-          path: output/
+          commit_message: "🔄 Auto-update sitemaps via GitHub Action"
+          file_pattern: "dist/*.xml"
