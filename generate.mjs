@@ -66,6 +66,9 @@ const run = async () => {
 
   // index.xml per taal
   for (const lang in perLangIndex) {
+   // ✅ Filter veiligheidshalve foute entries weg
+   perLangIndex[lang] = perLangIndex[lang].filter(f => f.endsWith('.xml'));
+    
     const xml = buildIndex(perLangIndex[lang]);
     await fs.writeFile(`dist/${lang}.xml`, xml);
     console.log(`📦 ${lang}-index.xml (${perLangIndex[lang].length} bestanden)`);
