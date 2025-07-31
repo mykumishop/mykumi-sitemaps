@@ -1,0 +1,7 @@
+name = "sitemaps-mykumi"
+type = "javascript"
+
+account_id = "0b22122f92afd6c4f638b5c2ffcd5012"
+compatibility_date = "2025-07-31"
+
+main = "index.js"
