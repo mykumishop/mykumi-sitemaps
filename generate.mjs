@@ -67,7 +67,7 @@ const run = async () => {
   // index.xml per taal
   for (const lang in perLangIndex) {
     const xml = buildIndex(perLangIndex[lang]);
-    await fs.writeFile(`dist/${lang}-index.xml`, xml);
+    await fs.writeFile(`dist/${lang}.xml`, xml);
     console.log(`📦 ${lang}-index.xml (${perLangIndex[lang].length} bestanden)`);
   }
 };
