@@ -1,4 +1,4 @@
-// generate.mjs v4 – taalstabiele sitemap-splitter
+// generate.mjs v5 – volledige validatie per taal vóór commit
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
@@ -25,12 +25,8 @@ const run = async () => {
   const parsedIndex = await parseStringPromise(indexXml);
   const sitemapUrls = parsedIndex.sitemapindex.sitemap.map(s => s.loc[0]);
 
-  // ✅ Sorteer URLs per taal
   const byLang = {
-    en: [],
-    fr: [],
-    de: [],
-    nl: [],
+    en: [], fr: [], de: [], nl: []
   };
 
   for (const url of sitemapUrls) {
@@ -39,10 +35,10 @@ const run = async () => {
     if (!match) continue;
 
     const [, lang = 'en'] = match;
+    if (!byLang[lang]) byLang[lang] = [];
     byLang[lang].push(url);
   }
 
-  // ✅ Verwerk elke taal afzonderlijk
   for (const lang of LANGS) {
     const urls = byLang[lang] || [];
     for (const sitemapUrl of urls) {
@@ -72,8 +68,40 @@ const run = async () => {
     }
   }
 
-  // ✅ Schrijf bestanden weg
+  // ✅ Validatie: elke taal moet exact zelfde structuur hebben als 'en'
+  const structure = {};
+  for (const lang of LANGS) {
+    const counts = { products: 0, pages: 0, collections: 0, blogs: 0 };
+    for (const file of perLangIndex[lang] || []) {
+      const match = file.match(/-(products|pages|collections|blogs)-/);
+      if (match) counts[match[1]]++;
+    }
+    structure[lang] = counts;
+  }
+
+  const reference = structure.en;
+  let valid = true;
+  for (const lang of LANGS) {
+    for (const type of ['products', 'pages', 'collections', 'blogs']) {
+      if ((structure[lang]?.[type] || 0) !== (reference[type] || 0)) {
+        console.error(`❌ ${lang} heeft ${structure[lang][type]} ${type}, verwacht ${reference[type]}`);
+        valid = false;
+      }
+    }
+  }
+
+  if (!valid) {
+    console.error('❌ Sitemapstructuur ongeldig. Run wordt gestopt zonder wegschrijven.');
+    process.exit(1);
+  }
+
   await fs.mkdir('dist', { recursive: true });
+  const files = await fs.readdir('dist');
+  for (const file of files) {
+    if (file.endsWith('.xml')) {
+      await fs.unlink(`dist/${file}`);
+    }
+  }
 
   for (const file in perFileContent) {
     await fs.writeFile(`dist/${file}`, perFileContent[file]);
