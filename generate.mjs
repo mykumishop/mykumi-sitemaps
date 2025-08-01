@@ -1,4 +1,4 @@
-// generate.mjs v6 – stabiele retry + vertraging + validatie
+// generate.mjs v7 – volledig sequentieel + robuuste retry + validatie
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
@@ -11,18 +11,18 @@ const perLangIndex = {};
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const fetchWithRetry = async (url, retries = 2) => {
-  for (let attempt = 0; attempt <= retries; attempt++) {
+const fetchWithRetry = async (url, retries = 4) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url);
       const text = await res.text();
       return await parseStringPromise(text);
     } catch (err) {
-      console.warn(`Retry ${attempt + 1} voor ${url} mislukt: ${err.message}`);
+      console.warn(`⏳ Retry ${attempt} voor ${url} mislukt: ${err.message}`);
       if (attempt < retries) await sleep(1000);
     }
   }
-  throw new Error(`Permanente fout bij ophalen van ${url}`);
+  throw new Error(`🚫 Permanente fout bij ophalen van ${url}`);
 };
 
 const buildXml = (urls) => `<?xml version="1.0" encoding="UTF-8"?>
@@ -54,28 +54,33 @@ const run = async () => {
 
   for (const lang of LANGS) {
     const urls = byLang[lang] || [];
+    console.log(`🌍 Verwerking ${lang.toUpperCase()} (${urls.length} sitemaps)`);
     for (const sitemapUrl of urls) {
+      const path = new URL(sitemapUrl).pathname.replace(/\?.*$/, '');
+      const match = path.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
+      if (!match) continue;
+
+      const [, , type, chunk] = match;
+      const fileName = `${lang}-${type}-${chunk}.xml`;
+
       try {
-        const path = new URL(sitemapUrl).pathname.replace(/\?.*$/, '');
-        const match = path.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
-        if (!match) continue;
-
-        const [, , type, chunk] = match;
-        const fileName = `${lang}-${type}-${chunk}.xml`;
-
         const parsed = await fetchWithRetry(sitemapUrl);
         const entries = parsed.urlset?.url?.map(u => u.loc[0]) || [];
-        if (!entries.length) continue;
+        if (!entries.length) {
+          console.warn(`⚠️ Lege sitemap: ${fileName}`);
+          continue;
+        }
 
         perFileContent[fileName] = buildXml(entries);
         perLangIndex[lang] = perLangIndex[lang] || [];
         perLangIndex[lang].push(fileName);
 
         console.log(`✅ ${fileName} (${entries.length} URLs)`);
-        await sleep(300);
       } catch (err) {
-        console.warn(`⚠️ Fout bij ${sitemapUrl}: ${err.message}`);
+        console.warn(`❌ Overgeslagen: ${fileName} – ${err.message}`);
       }
+
+      await sleep(600);
     }
   }
 
@@ -101,7 +106,7 @@ const run = async () => {
   }
 
   if (!valid) {
-    console.error('❌ Sitemapstructuur ongeldig. Run wordt gestopt zonder wegschrijven.');
+    console.error('🚫 Ongeldige structuur. Geen bestanden geschreven.');
     process.exit(1);
   }
 
@@ -122,7 +127,7 @@ const run = async () => {
     const indexXml = buildIndex(files);
     await fs.writeFile(`dist/${lang}.xml`, indexXml);
     await fs.writeFile(`dist/${lang}-index.xml`, indexXml);
-    console.log(`📦 ${lang}.xml (${files.length} bestanden)`);
+    console.log(`📦 ${lang}.xml (${files.length} chunks)`);
   }
 };
 
