@@ -1,4 +1,4 @@
-// generate.mjs v5 – volledige validatie per taal vóór commit
+// generate.mjs v6 – stabiele retry + vertraging + validatie
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
@@ -6,8 +6,24 @@ import { parseStringPromise } from 'xml2js';
 const INDEX_URL = 'https://mykumi.com/sitemap.xml';
 const LANGS = ['en', 'fr', 'de', 'nl'];
 
-const perFileContent = {}; // bv. fr-products-1.xml => inhoud
-const perLangIndex = {};   // bv. fr => [bestandsnamen]
+const perFileContent = {};
+const perLangIndex = {};
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const fetchWithRetry = async (url, retries = 2) => {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url);
+      const text = await res.text();
+      return await parseStringPromise(text);
+    } catch (err) {
+      console.warn(`Retry ${attempt + 1} voor ${url} mislukt: ${err.message}`);
+      if (attempt < retries) await sleep(1000);
+    }
+  }
+  throw new Error(`Permanente fout bij ophalen van ${url}`);
+};
 
 const buildXml = (urls) => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -25,15 +41,12 @@ const run = async () => {
   const parsedIndex = await parseStringPromise(indexXml);
   const sitemapUrls = parsedIndex.sitemapindex.sitemap.map(s => s.loc[0]);
 
-  const byLang = {
-    en: [], fr: [], de: [], nl: []
-  };
+  const byLang = { en: [], fr: [], de: [], nl: [] };
 
   for (const url of sitemapUrls) {
     const path = new URL(url).pathname.replace(/\?.*$/, '');
     const match = path.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
     if (!match) continue;
-
     const [, lang = 'en'] = match;
     if (!byLang[lang]) byLang[lang] = [];
     byLang[lang].push(url);
@@ -50,11 +63,8 @@ const run = async () => {
         const [, , type, chunk] = match;
         const fileName = `${lang}-${type}-${chunk}.xml`;
 
-        const res = await fetch(sitemapUrl);
-        const xml = await res.text();
-        const parsed = await parseStringPromise(xml);
+        const parsed = await fetchWithRetry(sitemapUrl);
         const entries = parsed.urlset?.url?.map(u => u.loc[0]) || [];
-
         if (!entries.length) continue;
 
         perFileContent[fileName] = buildXml(entries);
@@ -62,13 +72,13 @@ const run = async () => {
         perLangIndex[lang].push(fileName);
 
         console.log(`✅ ${fileName} (${entries.length} URLs)`);
+        await sleep(300);
       } catch (err) {
         console.warn(`⚠️ Fout bij ${sitemapUrl}: ${err.message}`);
       }
     }
   }
 
-  // ✅ Validatie: elke taal moet exact zelfde structuur hebben als 'en'
   const structure = {};
   for (const lang of LANGS) {
     const counts = { products: 0, pages: 0, collections: 0, blogs: 0 };
