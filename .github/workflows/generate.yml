@@ -2,12 +2,17 @@ name: Generate language-specific sitemaps
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Elke dag om 03:00 UTC
-  workflow_dispatch:     # Manueel triggeren via GitHub
+    - cron: '0 3 * * *'     # Dagelijks om 03:00 UTC
+  workflow_dispatch:        # Handmatig triggerbaar
 
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10     # Maximaal 10 min per poging
+    strategy:
+      fail-fast: false
+      max-attempts: 3       # Max 3 pogingen als de run faalt
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
