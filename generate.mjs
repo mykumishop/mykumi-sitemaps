@@ -1,9 +1,10 @@
-// generate.mjs v7.2 – statisch + retry + live-sitemap.xml + validering
+// generate.mjs v7.3 – statisch + retry + validering + live-sitemap.xml
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
 
 const INDEX_URL = 'https://mykumi.com/sitemap.xml';
+const CDN_BASE = 'https://sitemap.mykumi.com/';
 const LANGS = ['en', 'fr', 'de', 'nl'];
 
 const perFileContent = {};
@@ -32,7 +33,7 @@ ${urls.map(u => `<url><loc>${u}</loc></url>`).join('\n')}
 
 const buildIndex = (files) => `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${files.map(f => `<sitemap><loc>https://sitemap.mykumi.com/${f}</loc></sitemap>`).join('\n')}
+${files.map(f => `<sitemap><loc>${CDN_BASE}${f}</loc></sitemap>`).join('\n')}
 </sitemapindex>`;
 
 const run = async () => {
@@ -84,7 +85,7 @@ const run = async () => {
     }
   }
 
-  // ✅ Valideren op gelijke structuur
+  // ✅ Valideer structuur
   const structure = {};
   for (const lang of LANGS) {
     const counts = { products: 0, pages: 0, collections: 0, blogs: 0 };
@@ -93,6 +94,7 @@ const run = async () => {
       if (match) counts[match[1]]++;
     }
     structure[lang] = counts;
+    console.log(`📊 Structuur ${lang}:`, counts);
   }
 
   const reference = structure.en;
@@ -111,14 +113,9 @@ const run = async () => {
     process.exit(1);
   }
 
-  // ✅ Schrijven naar dist/
+  // ✅ dist-folder cleanen en herschrijven
+  await fs.rm('dist', { recursive: true, force: true });
   await fs.mkdir('dist', { recursive: true });
-  const files = await fs.readdir('dist');
-  for (const file of files) {
-    if (file.endsWith('.xml')) {
-      await fs.unlink(`dist/${file}`);
-    }
-  }
 
   for (const file in perFileContent) {
     await fs.writeFile(`dist/${file}`, perFileContent[file]);
@@ -132,7 +129,7 @@ const run = async () => {
     console.log(`📦 ${lang}.xml en ${lang}-index.xml (${files.length} chunks)`);
   }
 
-  // ✅ live-sitemap.xml met indexlinks
+  // ✅ Maak live-sitemap.xml aan
   const allIndexes = LANGS.map(lang => `${lang}.xml`);
   const liveXml = buildIndex(allIndexes);
   await fs.writeFile(`dist/live-sitemap.xml`, liveXml);
