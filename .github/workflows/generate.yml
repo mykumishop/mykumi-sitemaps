@@ -2,16 +2,13 @@ name: Generate language-specific sitemaps
 
 on:
   schedule:
-    - cron: '0 3 * * *'     # Dagelijks om 03:00 UTC
-  workflow_dispatch:        # Handmatig triggerbaar
+    - cron: '0 3 * * *'  # Dagelijks om 03:00 UTC
+  workflow_dispatch:     # Manueel triggerbaar
 
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10     # Maximaal 10 min per poging
-    strategy:
-      fail-fast: false
-      max-attempts: 3       # Max 3 pogingen als de run faalt
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
