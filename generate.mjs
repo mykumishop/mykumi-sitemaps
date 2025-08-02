@@ -1,4 +1,4 @@
-// generate.mjs v7.1 – volledig sequentieel + retry + validatie + live-sitemap.xml
+// generate.mjs v7.2 – statisch + retry + live-sitemap.xml + validering
 import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
@@ -48,13 +48,13 @@ const run = async () => {
     const match = path.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
     if (!match) continue;
     const [, lang = 'en'] = match;
-    if (!byLang[lang]) byLang[lang] = [];
     byLang[lang].push(url);
   }
 
   for (const lang of LANGS) {
     const urls = byLang[lang] || [];
     console.log(`🌍 Verwerking ${lang.toUpperCase()} (${urls.length} sitemaps)`);
+
     for (const sitemapUrl of urls) {
       const path = new URL(sitemapUrl).pathname.replace(/\?.*$/, '');
       const match = path.match(/^\/(?:(fr|de|nl)\/)?sitemap_(products|pages|collections|blogs)_(\d+)/);
@@ -84,6 +84,7 @@ const run = async () => {
     }
   }
 
+  // ✅ Valideren op gelijke structuur
   const structure = {};
   for (const lang of LANGS) {
     const counts = { products: 0, pages: 0, collections: 0, blogs: 0 };
@@ -110,6 +111,7 @@ const run = async () => {
     process.exit(1);
   }
 
+  // ✅ Schrijven naar dist/
   await fs.mkdir('dist', { recursive: true });
   const files = await fs.readdir('dist');
   for (const file of files) {
@@ -127,14 +129,14 @@ const run = async () => {
     const indexXml = buildIndex(files);
     await fs.writeFile(`dist/${lang}.xml`, indexXml);
     await fs.writeFile(`dist/${lang}-index.xml`, indexXml);
-    console.log(`📦 ${lang}.xml (${files.length} chunks)`);
+    console.log(`📦 ${lang}.xml en ${lang}-index.xml (${files.length} chunks)`);
   }
 
-  // 🌍 live-sitemap.xml genereren op basis van taalbestanden
+  // ✅ live-sitemap.xml met indexlinks
   const allIndexes = LANGS.map(lang => `${lang}.xml`);
   const liveXml = buildIndex(allIndexes);
   await fs.writeFile(`dist/live-sitemap.xml`, liveXml);
-  console.log(`🌐 live-sitemap.xml aangemaakt (${allIndexes.length} talen)`);
+  console.log(`🌐 live-sitemap.xml aangemaakt (${allIndexes.length} taalindexen)`);
 };
 
 run().catch(err => {
